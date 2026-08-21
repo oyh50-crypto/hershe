@@ -46,3 +46,17 @@ models:
 
   - name: mart_channel_performance
     description: Daily ad spend joined to session/conversion outcomes per channel (CPC, CVR, ROAS, CPA).
+
+  - name: mart_cohort_retention
+    description: >
+      Cohort (first purchase month) x period_number (months since cohort) retention table.
+      Long/tidy format — pivot into a triangle in the BI layer. Retention is defined as
+      having a GA4 session in that month, which requires GA4 user_id to match the CRM
+      customer_id (set on login).
+    columns:
+      - name: cohort_month
+        tests:
+          - not_null
+      - name: period_number
+        tests:
+          - not_null

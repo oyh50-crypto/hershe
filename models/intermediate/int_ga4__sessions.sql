@@ -32,6 +32,7 @@ session_agg as (
     select
         session_id,
         any_value(user_pseudo_id) as user_pseudo_id,
+        max(user_id) as user_id,
         min(event_date) as event_date,
         min(event_timestamp) as session_start,
         max(event_timestamp) as session_end,

@@ -24,6 +24,11 @@ models/
 - **`fct_funnel_steps`** — 세션 x 도달한 퍼널 단계 (grain은 실제 도달한 단계만).
 - **`mart_channel_performance`** — 일자 x 채널별 광고비 + 세션/전환/매출을 결합해 CPC, CVR, ROAS, CPA 산출.
 - **`fct_orders`** — CRM 주문 팩트에 GA4 채널 어트리뷰션을 결합.
+- **`mart_cohort_retention`** — 첫 구매월(`cohort_month`) x 경과월(`period_number`) 리텐션 테이블.
+  Long/tidy 포맷이라 BI 툴에서 삼각형 피벗으로 시각화하면 됩니다. 리텐션은 "해당 월에
+  GA4 세션이 있었는가"로 정의했기 때문에, **GA4 이벤트의 `user_id`가 로그인 시 CRM
+  `customer_id`와 동일하게 세팅되어 있어야** 정확히 동작합니다. 그렇지 않다면 별도
+  아이덴티티 매핑 테이블이 먼저 필요합니다.
 
 ## 설정하기 전에 반드시 확인할 것
 
