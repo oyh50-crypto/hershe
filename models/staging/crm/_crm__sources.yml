@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: crm
+    database: "{{ var('crm_project') }}"
+    schema: "{{ var('crm_dataset') }}"
+    tables:
+      - name: orders
+        description: >
+          CRM/order system export — the source of truth for order status and
+          amounts. Column names are placeholders — adjust to the real schema.

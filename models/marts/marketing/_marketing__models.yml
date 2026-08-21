@@ -1,0 +1,48 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: Calendar spine from 2020-01-01 to today.
+    columns:
+      - name: date
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_sessions
+    description: One row per GA4 session, with channel grouping and purchase outcome.
+    columns:
+      - name: session_id
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_funnel_steps
+    description: One row per session per ecommerce funnel step actually reached.
+    columns:
+      - name: session_id
+        tests:
+          - not_null
+      - name: step_name
+        tests:
+          - not_null
+
+  - name: mart_funnel_analysis
+    description: >
+      Daily funnel step-by-step session counts and conversion/drop-off rates,
+      broken out by channel. Primary output for customer behavior/funnel analysis.
+    columns:
+      - name: sessions
+        tests:
+          - not_null
+
+  - name: fct_orders
+    description: One row per CRM order, enriched with GA4 channel attribution.
+    columns:
+      - name: order_id
+        tests:
+          - unique
+          - not_null
+
+  - name: mart_channel_performance
+    description: Daily ad spend joined to session/conversion outcomes per channel (CPC, CVR, ROAS, CPA).

@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: ads
+    database: "{{ var('ads_project') }}"
+    schema: "{{ var('ads_dataset') }}"
+    tables:
+      - name: google_ads_performance
+        description: >
+          Google Ads campaign performance export (e.g. via Fivetran/Supermetrics).
+          Column names are placeholders — adjust to the actual connector schema.
+      - name: meta_ads_performance
+        description: >
+          Meta (Facebook/Instagram) Ads campaign performance export.
+          Column names are placeholders — adjust to the actual connector schema.

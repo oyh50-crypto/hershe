@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: ga4_orders
+    database: "{{ var('ga4_orders_project') }}"
+    schema: "{{ var('ga4_orders_dataset') }}"
+    tables:
+      - name: combined_orders
+        description: >
+          Existing table joining GA4 sessions to order records, used here
+          purely as the attribution bridge (order_id -> session/channel).
+          Column names below are placeholders — rename to match the real table.

@@ -1,0 +1,53 @@
+name: 'hershe_marketing_mart'
+version: '1.0.0'
+config-version: 2
+
+profile: 'hershe_marketing_mart'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # GA4 BigQuery export location — replace with the actual linked project/dataset
+  ga4_project: "your-gcp-project"
+  ga4_dataset: "analytics_XXXXXXXXX"
+
+  # GA4 + order attribution bridge table (already joined per the team's own pipeline)
+  ga4_orders_project: "your-gcp-project"
+  ga4_orders_dataset: "marketing_raw"
+
+  # Ad platform exports (Fivetran/Supermetrics/Funnel.io connector output, etc.)
+  ads_project: "your-gcp-project"
+  ads_dataset: "ads_raw"
+
+  # CRM / order / payment system export
+  crm_project: "your-gcp-project"
+  crm_dataset: "crm_raw"
+
+  # Ecommerce funnel definition, in order. Adjust to match this business's
+  # actual GA4 event names (these are the standard GA4 enhanced-ecommerce events).
+  funnel_steps:
+    - session_start
+    - view_item
+    - add_to_cart
+    - begin_checkout
+    - add_payment_info
+    - purchase
+
+models:
+  hershe_marketing_mart:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: view
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts

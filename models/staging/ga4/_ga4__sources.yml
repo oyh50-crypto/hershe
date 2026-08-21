@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: ga4
+    database: "{{ var('ga4_project') }}"
+    schema: "{{ var('ga4_dataset') }}"
+    tables:
+      - name: events
+        identifier: events_*
+        description: >
+          GA4 BigQuery Export daily event tables, referenced as a wildcard
+          table so every date partition is scanned. Add a date filter on
+          `_table_suffix` in downstream models if full-history scans get
+          too expensive.
