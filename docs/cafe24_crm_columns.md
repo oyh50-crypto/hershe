@@ -159,3 +159,39 @@ Cafe24 Admin API의 **주문 조회 API**(`GET /api/v2/admin/orders`)와 **주�
    존재할 수 있습니다. 적재 방식(증분 vs 스냅샷)을 확인하고, 스냅샷이면
    `QUALIFY ROW_NUMBER() OVER (PARTITION BY items_order_item_code ORDER BY query_date DESC) = 1`
    로 최신 상태만 남기세요.
+
+---
+
+## 10. 상품 마스터 컬럼 (주문 행에 denormalize 되어 있음)
+
+이 테이블은 주문 + 품목에 **상품 마스터와 카테고리까지 붙여 놓은 단일 와이드 테이블**이라,
+카테고리 분석에 별도 조인이 필요 없습니다.
+
+| 컬럼 | 타입 | 의미 |
+|---|---|---|
+| `product_no` | INTEGER | 상품 일련번호 (상품 마스터 기준). `items_product_no`와 동일 값이어야 정상 |
+| `product_code` | STRING | 상품 코드 |
+| `product_name` | STRING | **현재 상품명** (주문 시점 상품명은 `items_product_name`) |
+| `price` | STRING | 상품 판매가 (마스터 기준 현재가) |
+| `supply_price` | STRING | **공급가** — 마진 분석용 |
+| `display` | STRING | 진열 여부 (T/F) |
+| `selling` | STRING | 판매 여부 (T/F) |
+| `price_content` | STRING | 가격 대체 문구 (가격 비공개 시 노출 텍스트) |
+| `repurchase_restriction` | STRING | 재구매 제한 여부 |
+| `single_purchase_restriction` | STRING | 단독구매 제한 여부 |
+| `single_purchase` | STRING | 단독구매 설정 |
+| `detail_image` / `list_image` / `tiny_image` / `small_image` | STRING | 상품 이미지 URL (상세/목록/썸네일) |
+| `created_date` | DATE | 상품 등록일 — 신상품 분석에 활용 |
+| `updated_date` | DATE | 상품 정보 수정일 |
+
+## 11. 카테고리 / 기타
+
+| 컬럼 | 타입 | 의미 |
+|---|---|---|
+| `full_category_name_1` ~ `_4` | STRING | **카테고리 depth별 전체 경로명**. `_1`이 대분류, `_4`가 최하위 |
+| `TB_DATE` | DATE | 분석 기준 일자. 적재 파이프라인이 만든 컬럼으로, 주문일 기준일 것으로 보이나 **`DATE(order_date, 'Asia/Seoul')`와 일치하는지 1회 검증 권장** |
+| `discounted_amount` | FLOAT | 할인 관련 금액. **"할인액 합계"인지 "할인 후 금액"인지 정의가 불명확** — `analyses/order_item_amounts_qa.sql`의 C/D 체크로 판별 후 확정하세요 |
+| `__index_level_0__` | INTEGER | pandas DataFrame 인덱스가 그대로 적재된 잔여 컬럼. **분석에 사용하지 말 것** |
+
+> `full_category_name_*`은 상품이 여러 카테고리에 속할 경우 대표 1건만 실려 있을 가능성이
+> 높습니다. 카테고리별 매출 합이 전체 매출과 맞는지 확인해 두세요.

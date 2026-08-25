@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: stg_crm__cafe24_order_items
+    description: >
+      One row per Cafe24 order item, deduplicated to the latest snapshot and
+      type-cast. Amounts are bucketed into gross / points+coupons / discounts so
+      that downstream models can add them back to the list price.
+    columns:
+      - name: order_item_code
+        description: Cafe24 order item code — natural key.
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+        tests:
+          - not_null
+      - name: gross_amount
+        description: Order product amount apportioned to this item, before any discount.
+        tests:
+          - not_null
+      - name: point_coupon_used_amount
+        description: Points spent plus order- and item-level coupon discounts.
+      - name: discount_amount
+        description: Membership tier, product-level additional, and app discounts.

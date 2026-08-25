@@ -60,3 +60,20 @@ models:
       - name: period_number
         tests:
           - not_null
+
+  - name: mart_order_items
+    description: >
+      Analysis-ready order item table. item_paid_amount, point_coupon_used_amount
+      and discount_amount are mutually exclusive and sum to the item's list
+      product amount.
+    columns:
+      - name: items_order_item_code
+        tests:
+          - unique
+          - not_null
+      - name: TB_DATE
+        tests:
+          - not_null
+      - name: item_paid_amount
+        tests:
+          - not_null

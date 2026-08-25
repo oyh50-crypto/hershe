@@ -29,6 +29,8 @@ vars:
   # CRM / order / payment system export
   crm_project: "your-gcp-project"
   crm_dataset: "crm_raw"
+  # Cafe24 order+item+product export, flattened to one row per order item
+  crm_cafe24_orders_table: "cafe24_orders"
 
   # Ecommerce funnel definition, in order. Adjust to match this business's
   # actual GA4 event names (these are the standard GA4 enhanced-ecommerce events).
