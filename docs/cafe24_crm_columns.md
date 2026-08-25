@@ -208,6 +208,40 @@ Cafe24 Admin API의 **주문 조회 API**(`GET /api/v2/admin/orders`)와 **주�
 | `items_payment_amount` = 품목 실결제액 | 5 / 9437 | **실결제액 아님** — 용도 재확인 필요 |
 | `discounted_amount` = 할인액 합계 | 4718 / 9437 | 할인 0원 행에서만 일치 → 다른 정의 |
 
-> 할인 버킷 조합은 `analyses/order_item_amounts_diagnose.sql` 로 판별 중입니다.
-> 유력 가설: `initial_order_amount_coupon_discount_price` 가 품목 쿠폰
-> (`items_coupon_discount_price`) 을 이미 포함해 이중계상되고 있음.
+### 할인 버킷 조합 판별 결과
+
+후보 조합별 적중 건수 (9,437건 기준):
+
+| 조합 | 적중 | 판정 |
+|---|---|---|
+| `pts + cpn_ord + cpn_item + mbr + add + app` | 8525 | **최선** (90.3%) |
+| 품목쿠폰 제외 | 8525 | 동일 → `items_coupon_discount_price` 는 **전량 0** |
+| 주문쿠폰 제외 | 5810 | 주문쿠폰 필수 |
+| 품목할인 전부 제외 | 7034 | 상품추가·앱할인 필수 |
+| 등급할인 제외 | 8249 | 등급할인 필수 |
+| `+ naver_point` | 8525 | 동일 → `naver_point` 도 **전량 0** |
+
+→ 이중계상 가설은 기각. 남은 9.7%(912건)는 **현재 컬럼만으로 설명 불가**하며
+`analyses/order_item_amounts_gap_profile.sql` 로 추적 중입니다.
+
+### 사용하면 안 되는 컬럼
+
+| 컬럼 | 사유 |
+|---|---|
+| `items_coupon_discount_price` | 전량 0 |
+| `naver_point` | 전량 0 |
+| `items_payment_amount` | 정가·안분정가·주문결제액 등 후보 전부 불일치 (최대 0/9437). 정의 불명 |
+| `discounted_amount` | 총할인액·할인후금액 등 후보 전부 불일치. 정의 불명 |
+| `__index_level_0__` | pandas 인덱스 잔여물 |
+
+### 채택한 설계
+
+실결제액을 잔차로 두면 미설명 오차 912건이 매출 지표를 오염시키므로,
+**검증된 실결제액을 그대로 쓰고 할인액을 잔차로** 계산합니다.
+
+```
+item_paid_amount        = div_payment_amount − 배송비안분        (검증 완료)
+point_coupon_used_amount = 적립금안분 + 주문쿠폰안분              (검증 완료)
+discount_amount          = gross − 위 둘                          (잔차, 오차 흡수)
+```
+세 컬럼 합은 항상 `div_initial_order_amount_order_price_amount` 와 정확히 일치합니다.

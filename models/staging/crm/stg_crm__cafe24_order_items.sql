@@ -50,23 +50,29 @@ renamed as (
         cast(coalesce(div_initial_order_amount_order_price_amount, 0) as numeric)
                                                                        as gross_amount,
 
-        -- bucket B — points and coupons actually spent by the customer
+        -- net paid: apportioned payment less apportioned shipping. Validated against
+        -- the order totals — this, not items_payment_amount, is the item's real
+        -- paid amount (items_payment_amount matched on 5 of 9437 rows).
+        cast(coalesce(div_payment_amount, 0) as numeric)
+      - cast(coalesce(shipping_fee_detail_shipping_fee_divided, 0) as numeric)
+                                                                       as item_paid_amount,
+
+        -- points and coupons spent by the customer. items_coupon_discount_price is
+        -- excluded: it is zero on every row in the export.
         cast(coalesce(initial_order_amount_points_spent_amount_divided,   0) as numeric)
       + cast(coalesce(initial_order_amount_coupon_discount_price_divided, 0) as numeric)
-      + coalesce(safe_cast(items_coupon_discount_price as numeric),         0)
                                                                        as point_coupon_used_amount,
 
-        -- bucket C — membership tier / product-level / app discounts
+        -- membership tier / product-level / app discounts, from the raw columns.
+        -- These reproduce the residual on 90% of rows, so the mart takes the
+        -- residual instead and keeps this for monitoring.
         cast(coalesce(initial_order_amount_membership_discount_amount_divided, 0) as numeric)
       + coalesce(safe_cast(items_additional_discount_price as numeric),        0)
       + coalesce(safe_cast(items_app_item_discount_amount  as numeric),        0)
-                                                                       as discount_amount,
+                                                                       as component_discount_amount,
 
         cast(coalesce(shipping_fee_detail_shipping_fee_divided, 0) as numeric)
-                                                                       as shipping_fee_amount,
-
-        -- kept so the reconciliation test can compare against the source's own figure
-        coalesce(safe_cast(items_payment_amount as numeric), 0)        as src_item_paid_amount
+                                                                       as shipping_fee_amount
 
     from deduped
 
