@@ -195,3 +195,19 @@ Cafe24 Admin API의 **주문 조회 API**(`GET /api/v2/admin/orders`)와 **주�
 
 > `full_category_name_*`은 상품이 여러 카테고리에 속할 경우 대표 1건만 실려 있을 가능성이
 > 높습니다. 카테고리별 매출 합이 전체 매출과 맞는지 확인해 두세요.
+
+---
+
+## 부록. 실데이터 검증 결과 (9,437 품목 / 6,740 주문 기준)
+
+| 검증 항목 | 결과 | 결론 |
+|---|---|---|
+| `TB_DATE` = `DATE(order_date, KST)` | 9437 / 9437 | **주문일 기준 확정** |
+| `SUM(div_initial_order_amount_order_price_amount)` = 주문 총상품금액 | 6706 / 6740 | **안분 정가금액으로 사용 가능** (99.5%) |
+| `div_payment_amount` − 배송비안분 = 품목 실결제액 | 8525 / 9437 | 실결제액의 기준 컬럼. 나머지 10%는 할인 버킷 정의 문제 |
+| `items_payment_amount` = 품목 실결제액 | 5 / 9437 | **실결제액 아님** — 용도 재확인 필요 |
+| `discounted_amount` = 할인액 합계 | 4718 / 9437 | 할인 0원 행에서만 일치 → 다른 정의 |
+
+> 할인 버킷 조합은 `analyses/order_item_amounts_diagnose.sql` 로 판별 중입니다.
+> 유력 가설: `initial_order_amount_coupon_discount_price` 가 품목 쿠폰
+> (`items_coupon_discount_price`) 을 이미 포함해 이중계상되고 있음.
