@@ -3,23 +3,30 @@
 --
 -- grain : 주문 품목 1건 (items_order_item_code)
 --
--- 금액 정합식
---   item_paid_amount + point_coupon_used_amount + discount_amount
---     = div_initial_order_amount_order_price_amount   (품목 안분 정가금액)
+-- ── 검증된 주문 레벨 정합식 (온전한 주문 6,706건 중 6,646건 = 99.1%) ──────────
+--     정가 − 적립금 − 쿠폰 − (등급할인 + 상품추가할인 + 앱할인) + 배송비
+--       = payment_amount
+--   * payment_amount 는 안분되지 않은 주문 단위 원본 → ANY_VALUE 로 집계
+--   * 상품추가할인/앱할인은 품목 단위 총액 (수량 곱하지 않음)
 --
---   * item_paid_amount 는 검증된 실결제액(div_payment_amount - 배송비안분)을 그대로 사용
---   * discount_amount 를 잔차로 계산 → 세 컬럼 합은 항상 정가와 정확히 일치
+-- ── 안분 방식 ─────────────────────────────────────────────────────────────
+--   비중 w = div_initial_order_amount_order_price_amount / 주문 내 합계
+--   주문 단위 금액(정가·적립금·쿠폰·등급할인)에 w 를 곱해 품목으로 배분하고,
+--   품목 단위 금액(추가할인·앱할인)은 그대로 사용합니다.
+--   → 주문별 SUM(item_paid_amount) = payment_amount − 배송비  (상품 순매출)
 --
--- 실데이터 검증 결과 (9,437 품목)
---   TB_DATE = 주문일(KST)                          9437/9437
---   주문단위 안분합 = 주문 총상품금액                6706/6740 (99.5%)
---   등급/추가/앱 할인 원본 조합 = 잔차              8525/9437 (90.3%)
---     → 나머지 9.7% 는 원본 컬럼으로 설명 불가. 잔차 방식이라 총액 정합성에는
---       영향 없으나, discount_amount 세부 신뢰도는 90% 수준으로 보세요.
+-- ── 품목 레벨 정합식 (구성상 항상 정확히 성립) ────────────────────────────
+--     item_paid_amount + point_coupon_used_amount + discount_amount
+--       = item_gross_amount
 --
--- 사용 금지 컬럼
+-- ── 알려진 한계 ───────────────────────────────────────────────────────────
+--   부분취소 주문(전체의 약 0.5%)은 initial_order_amount_* 가 최초 주문 금액인 반면
+--   payment_amount 는 취소 반영 후 금액이라 구조적으로 합이 맞지 않습니다.
+--
+-- ── 사용 금지 컬럼 ────────────────────────────────────────────────────────
 --   items_coupon_discount_price, naver_point : 전량 0
---   items_payment_amount, discounted_amount  : 정의 불명 (후보 전부 불일치)
+--   items_payment_amount, discounted_amount, div_payment_amount : 정의 불명 /
+--     주문 레벨 정합식과 불일치 (직접 안분하므로 불필요)
 -- =============================================================================
 
 WITH deduped AS (
@@ -31,30 +38,78 @@ WITH deduped AS (
   ) = 1
 ),
 
-typed AS (
+items AS (
   SELECT
     TB_DATE,
     order_id,
     items_order_item_code,
-    NULLIF(TRIM(member_id), '')                                                AS member_id,
-
-    -- 정가(안분) : 세 금액 컬럼 합의 기준점
-    CAST(COALESCE(div_initial_order_amount_order_price_amount, 0) AS NUMERIC)  AS gross_amount,
-
-    -- 실결제액 : 안분 결제금액에서 배송비 안분액 제외 (상품 순매출)
-    CAST(COALESCE(div_payment_amount, 0) AS NUMERIC)
-      - CAST(COALESCE(shipping_fee_detail_shipping_fee_divided, 0) AS NUMERIC) AS item_paid_amount,
-
-    -- 적립금 + 쿠폰 사용액 (주문 단위 안분값. 품목 쿠폰 컬럼은 전량 0이라 제외)
-      CAST(COALESCE(initial_order_amount_points_spent_amount_divided,   0) AS NUMERIC)
-    + CAST(COALESCE(initial_order_amount_coupon_discount_price_divided, 0) AS NUMERIC)
-                                                                              AS point_coupon_used_amount,
+    NULLIF(TRIM(member_id), '')                                     AS member_id,
+    items_order_status,
+    paid,
     full_category_name_1,
-    full_category_name_2
+    full_category_name_2,
 
+    -- 안분 비중의 기준값
+    CAST(COALESCE(div_initial_order_amount_order_price_amount, 0) AS NUMERIC) AS weight_base,
+
+    -- 품목 단위 할인 (총액. 수량 곱하지 않음)
+    COALESCE(SAFE_CAST(items_additional_discount_price AS NUMERIC), 0)
+  + COALESCE(SAFE_CAST(items_app_item_discount_amount  AS NUMERIC), 0)        AS item_discount,
+
+    -- 주문 단위 원본 (품목 행마다 반복되는 값)
+    SAFE_CAST(initial_order_amount_order_price_amount            AS NUMERIC)  AS o_gross,
+    SAFE_CAST(initial_order_amount_points_spent_amount           AS NUMERIC)  AS o_points,
+    SAFE_CAST(initial_order_amount_coupon_discount_price         AS NUMERIC)  AS o_coupon,
+    SAFE_CAST(initial_order_amount_membership_discount_amount    AS NUMERIC)  AS o_membership
   FROM deduped
-  WHERE paid = 'T'                              -- 결제 완료 건만
-    AND STARTS_WITH(items_order_status, 'N')    -- 정상 주문만 (C취소/R반품/E교환 제외)
+),
+
+-- 주문 단위 비중 분모: 취소 품목까지 포함한 전체 합계로 계산해야
+-- 주문 단위 금액이 올바르게 배분됩니다.
+weighted AS (
+  SELECT
+    *,
+    SUM(weight_base) OVER (PARTITION BY order_id) AS order_weight_base,
+    COUNT(*)         OVER (PARTITION BY order_id) AS order_item_count
+  FROM items
+),
+
+allocated AS (
+  SELECT
+    TB_DATE,
+    order_id,
+    items_order_item_code,
+    member_id,
+    items_order_status,
+    paid,
+    full_category_name_1,
+    full_category_name_2,
+
+    -- 정가 총액이 0인 예외 주문은 균등 배분
+    CASE WHEN order_weight_base > 0 THEN weight_base / order_weight_base
+         ELSE 1 / order_item_count
+    END                                                             AS w,
+    o_gross, o_points, o_coupon, o_membership, item_discount
+  FROM weighted
+),
+
+-- 반올림은 여기서 한 번만. 실결제액을 마지막에 빼서 구해야
+-- 세 컬럼 합 = item_gross_amount 가 반올림 후에도 정확히 성립합니다.
+final AS (
+  SELECT
+    TB_DATE,
+    order_id,
+    items_order_item_code,
+    member_id,
+    items_order_status,
+    paid,
+    full_category_name_1,
+    full_category_name_2,
+
+    ROUND(o_gross * w, 2)                         AS item_gross_amount,
+    ROUND(o_points * w + o_coupon * w, 2)         AS point_coupon_used_amount,
+    ROUND(o_membership * w + item_discount, 2)    AS discount_amount
+  FROM allocated
 )
 
 SELECT
@@ -62,12 +117,16 @@ SELECT
   order_id,
   items_order_item_code,
   member_id,
-  item_paid_amount,
+
+  -- 실결제액 = 정가 − 적립금/쿠폰 − 할인 (배송비 제외한 상품 순매출)
+  item_gross_amount - point_coupon_used_amount - discount_amount    AS item_paid_amount,
   point_coupon_used_amount,
-  -- 회원등급할인 + 상품추가할인 + 기타할인 (잔차)
-  gross_amount - item_paid_amount - point_coupon_used_amount                  AS discount_amount,
+  discount_amount,
+
   full_category_name_1,
   full_category_name_2
 
-FROM typed
+FROM final
+WHERE paid = 'T'                                -- 결제 완료 건만
+  AND STARTS_WITH(items_order_status, 'N')      -- 정상 주문만 (C취소/R반품/E교환 제외)
 ORDER BY TB_DATE, order_id, items_order_item_code

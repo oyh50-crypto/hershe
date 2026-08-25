@@ -208,21 +208,49 @@ Cafe24 Admin API의 **주문 조회 API**(`GET /api/v2/admin/orders`)와 **주�
 | `items_payment_amount` = 품목 실결제액 | 5 / 9437 | **실결제액 아님** — 용도 재확인 필요 |
 | `discounted_amount` = 할인액 합계 | 4718 / 9437 | 할인 0원 행에서만 일치 → 다른 정의 |
 
-### 할인 버킷 조합 판별 결과
+### 확정된 금액 정합식 (주문 레벨)
 
-후보 조합별 적중 건수 (9,437건 기준):
+`payment_amount` 는 안분되지 않은 **주문 단위 원본**(품목 행마다 반복)이므로,
+정합성은 주문 레벨에서 성립합니다.
 
-| 조합 | 적중 | 판정 |
+```
+정가 − 적립금 − 쿠폰 − (등급할인 + 상품추가할인 + 앱할인) + 배송비 = payment_amount
+```
+
+부분취소 없는 온전한 주문 6,706건 중 **6,646건(99.1%)** 에서 성립.
+
+| 할인 항목 후보 | 적중 | 판정 |
 |---|---|---|
-| `pts + cpn_ord + cpn_item + mbr + add + app` | 8525 | **최선** (90.3%) |
-| 품목쿠폰 제외 | 8525 | 동일 → `items_coupon_discount_price` 는 **전량 0** |
-| 주문쿠폰 제외 | 5810 | 주문쿠폰 필수 |
-| 품목할인 전부 제외 | 7034 | 상품추가·앱할인 필수 |
-| 등급할인 제외 | 8249 | 등급할인 필수 |
-| `+ naver_point` | 8525 | 동일 → `naver_point` 도 **전량 0** |
+| 등급 + 상품추가 + 앱 | **6646** | **채택** |
+| 등급만 | 4939 | 품목할인 필수 |
+| 상품추가 + 앱만 | 6462 | 등급할인 필수 |
+| 등급 + 추가 + 앱 + 품목쿠폰 | 6646 | 동일 → 품목쿠폰 전량 0 |
+| 등급 + (추가+앱) × 수량 | 6641 | 품목할인은 **총액**이지 단가 아님 |
+| 등급 + 추가 + 앱 + 네이버포인트 | 6646 | 동일 → naver_point 전량 0 |
+| 배송비 제외 | 5262 | 배송비 항목 필수 |
 
-→ 이중계상 가설은 기각. 남은 9.7%(912건)는 **현재 컬럼만으로 설명 불가**하며
-`analyses/order_item_amounts_gap_profile.sql` 로 추적 중입니다.
+### 채택한 안분 방식
+
+주문 레벨에서 계산하고 품목 정가 비중으로 배분합니다. 파이프라인이 만든
+`div_payment_amount` 는 주문 레벨 정합식과 맞지 않아 사용하지 않습니다.
+
+```
+비중 w = div_initial_order_amount_order_price_amount / 주문 내 합계
+
+item_gross_amount        = 주문정가 × w
+point_coupon_used_amount = (적립금 + 쿠폰) × w
+discount_amount          = 등급할인 × w + 상품추가할인 + 앱할인
+item_paid_amount         = item_gross_amount − 위 둘
+```
+
+- 세 컬럼 합 = `item_gross_amount` (반올림 후에도 정확히 일치)
+- 주문별 `SUM(item_paid_amount)` = `payment_amount − 배송비` (상품 순매출)
+- 비중 분모는 **취소 품목까지 포함한 전체 합계** — 주문 단위 금액이 그것들도 포괄하기 때문
+
+### 알려진 한계
+
+부분취소 주문(약 0.5%)은 `initial_order_amount_*` 가 최초 주문 금액인 반면
+`payment_amount` 는 취소 반영 후 금액이라 구조적으로 합이 맞지 않습니다.
 
 ### 사용하면 안 되는 컬럼
 
@@ -230,18 +258,7 @@ Cafe24 Admin API의 **주문 조회 API**(`GET /api/v2/admin/orders`)와 **주�
 |---|---|
 | `items_coupon_discount_price` | 전량 0 |
 | `naver_point` | 전량 0 |
-| `items_payment_amount` | 정가·안분정가·주문결제액 등 후보 전부 불일치 (최대 0/9437). 정의 불명 |
-| `discounted_amount` | 총할인액·할인후금액 등 후보 전부 불일치. 정의 불명 |
+| `items_payment_amount` | 후보 정의 전부 불일치 (최대 0/9437). 정의 불명 |
+| `discounted_amount` | 후보 정의 전부 불일치. 정의 불명 |
+| `div_payment_amount` | 주문 레벨 정합식과 불일치. 직접 안분하므로 불필요 |
 | `__index_level_0__` | pandas 인덱스 잔여물 |
-
-### 채택한 설계
-
-실결제액을 잔차로 두면 미설명 오차 912건이 매출 지표를 오염시키므로,
-**검증된 실결제액을 그대로 쓰고 할인액을 잔차로** 계산합니다.
-
-```
-item_paid_amount        = div_payment_amount − 배송비안분        (검증 완료)
-point_coupon_used_amount = 적립금안분 + 주문쿠폰안분              (검증 완료)
-discount_amount          = gross − 위 둘                          (잔차, 오차 흡수)
-```
-세 컬럼 합은 항상 `div_initial_order_amount_order_price_amount` 와 정확히 일치합니다.

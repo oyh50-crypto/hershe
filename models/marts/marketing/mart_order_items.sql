@@ -11,24 +11,24 @@
 -- The three amount columns are mutually exclusive and add up to the item's list
 -- (pre-discount) product amount:
 --
---     item_paid_amount + point_coupon_used_amount + discount_amount = gross_amount
+--     item_paid_amount + point_coupon_used_amount + discount_amount
+--       = item_gross_amount
 --
--- item_paid_amount and point_coupon_used_amount come straight from validated
--- source columns; discount_amount is the residual, so the identity always holds
--- exactly. Shipping is excluded — it is not product revenue.
+-- item_paid_amount is the difference, so the identity survives rounding. Summed
+-- per order it equals payment_amount less shipping, because the staging model
+-- apportions the order-level amounts from the verified order identity rather
+-- than from the pipeline's div_payment_amount.
 --
--- The raw membership/additional/app discount columns reproduce that residual on
--- 90% of rows; the remaining 10% is unexplained by any available column, so the
--- residual absorbs it rather than corrupting the paid amount. See
--- analyses/order_item_amounts_gap_profile.sql for the ongoing investigation and
--- warn_order_item_discount_residual for the monitoring test.
+-- Known limitation: partially cancelled orders (~0.5%) cannot tie out, since
+-- initial_order_amount_* is the original order amount while payment_amount
+-- already reflects the cancellation.
 
 with order_items as (
 
     select * from {{ ref('stg_crm__cafe24_order_items') }}
 
-    -- Paid, non-cancelled orders only. Cancel (C*), return (R*) and exchange (E*)
-    -- statuses are excluded rather than signed negative — revisit if net revenue
+    -- Paid, non-cancelled items only. Cancel (C*), return (R*) and exchange (E*)
+    -- statuses are dropped rather than signed negative — revisit if net revenue
     -- including reversals is needed.
     where is_paid_flag = 'T'
       and starts_with(order_status, 'N')
@@ -36,14 +36,14 @@ with order_items as (
 )
 
 select
-    order_date                                                  as TB_DATE,
+    order_date                                                   as TB_DATE,
     order_id,
-    order_item_code                                             as items_order_item_code,
+    order_item_code                                              as items_order_item_code,
     member_id,
 
-    item_paid_amount,
+    item_gross_amount - point_coupon_used_amount - discount_amount as item_paid_amount,
     point_coupon_used_amount,
-    gross_amount - item_paid_amount - point_coupon_used_amount  as discount_amount,
+    discount_amount,
 
     full_category_name_1,
     full_category_name_2

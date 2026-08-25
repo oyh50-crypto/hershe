@@ -15,23 +15,21 @@ models:
       - name: order_id
         tests:
           - not_null
-      - name: gross_amount
-        description: Order product amount apportioned to this item, before any discount.
-        tests:
-          - not_null
-      - name: item_paid_amount
+      - name: item_gross_amount
         description: >
-          Apportioned payment less apportioned shipping — the item's real net paid
-          amount. Validated against order totals; items_payment_amount is NOT this
-          figure (it matched on 5 of 9437 rows) and is deliberately not exposed.
+          Order list amount apportioned to this item by its share of the order.
         tests:
           - not_null
       - name: point_coupon_used_amount
         description: >
           Points spent plus the order-level coupon discount, apportioned.
           items_coupon_discount_price is excluded — it is zero on every row.
-      - name: component_discount_amount
+      - name: discount_amount
         description: >
-          Membership tier, product-level additional and app discounts summed from
-          the raw columns. Reproduces the mart's residual on ~90% of rows; kept for
-          monitoring rather than used directly.
+          Apportioned membership tier discount plus this item's own additional and
+          app discounts. The item-level ones are totals, not per-unit amounts.
+      - name: order_payment_amount
+        description: >
+          Order-level payment amount, repeated on every item row of the order — it
+          is NOT apportioned. items_payment_amount and div_payment_amount are not
+          used: no candidate definition for either matched the data.
